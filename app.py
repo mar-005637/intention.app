@@ -9,7 +9,7 @@ if "groq_key" not in st.session_state:
     st.session_state.groq_key = ""
 
 with st.sidebar:
-st.title("Настройки")
+    st.title("Настройки")
     level = st.selectbox("Ваш уровень:", ["A2", "B1", "B2", "C1"])
     topic = st.selectbox("Тематика:", ["Повседневная жизнь", "Бизнес", "Учеба", "Путешествия", "Сленг"])
     api_key = st.text_input("Вставьте ваш Groq API Key сюда:", type="password")
@@ -28,7 +28,7 @@ if st.session_state.groq_key:
             model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}]
         )
-st.session_state.phrase = completion.choices[0].message.content
+        st.session_state.phrase = completion.choices[0].message.content
 
     st.info(f"Переведи: {st.session_state.phrase}")
     
@@ -40,8 +40,8 @@ st.session_state.phrase = completion.choices[0].message.content
         Русский оригинал: {st.session_state.phrase}
         Перевод ученика: {user_translation}
         Уровень: {level}
-
-Твоя задача:
+        
+        Твоя задача:
         1. Укажи на ошибки (если они есть).
         2. Напиши идеальный вариант, как бы сказал носитель языка.
         3. Объясни грамматику и выбор слов на русском языке.
