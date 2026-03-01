@@ -1,19 +1,18 @@
 import streamlit as st
 from groq import Groq
 
-# 1. Настройка внешнего вида
-st.set_page_config(page_title="Intention", page_icon="🎯", layout="centered")
+# Настройки страницы
+st.set_page_config(page_title="Intention", page_icon="🎯", layout="wide")
 
-# Кастомный стиль для красоты
+# Кастомные стили
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em; }
-    .reportview-container .main .block-container { padding-top: 2rem; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
+    .stExpander { border: none !important; box-shadow: none !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Инициализация памяти приложения (Session State)
+# Инициализация сессии
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'history' not in st.session_state:
@@ -21,114 +20,115 @@ if 'history' not in st.session_state:
 if 'current_phrase' not in st.session_state:
     st.session_state.current_phrase = ""
 
-# --- ЭКРАН ЛОГИНА ---
+# --- ЛОГИН ---
 if not st.session_state.logged_in:
     st.title("🎯 Intention")
-    st.subheader("Твой путь к автоматизму в английском")
-    
-    with st.container():
-        st.write("Создайте свой уникальный идентификатор для входа.")
-        user_id = st.text_input("Введите логин (ровно 8 символов):", placeholder="Например: User7777")
-        
-        if st.button("Войти в систему"):
-            if len(user_id) == 8:
-                st.session_state.username = user_id
-                st.session_state.logged_in = True
-                st.success("Успешный вход!")
-                st.rerun()
-            else:
-                st.error("Ошибка: Логин должен содержать ровно 8 символов. Сейчас у вас: " + str(len(user_id)))
+    user_id = st.text_input("Логин (8 символов):", max_chars=8)
+    if st.button("Войти"):
+        if len(user_id) == 8:
+            st.session_state.username = user_id
+            st.session_state.logged_in = True
+            st.rerun()
+        else:
+            st.error("Логин должен быть ровно 8 символов.")
     st.stop()
 
-# --- ОСНОВНОЙ ИНТЕРФЕЙС (после входа) ---
+# --- ИНТЕРФЕЙС ---
 st.title(f"🎯 Intention | {st.session_state.username}")
 
-# Боковое меню
+# БОКОВАЯ ПАНЕЛЬ: Настройки + История
 with st.sidebar:
     st.header("⚙️ Настройки")
-    api_key = st.text_input("Ваш Groq API Key:", type="password")
+    api_key = st.text_input("Groq API Key:", type="password")
     level = st.selectbox("Уровень:", ["A2", "B1", "B2", "C1"])
-    topic = st.selectbox("Тема:", ["Повседневная жизнь", "Бизнес/Работа", "Учеба", "Путешествия", "Сленг"])
+    topic = st.selectbox("Тема:", ["Повседневная жизнь", "Бизнес", "Учеба", "Путешествия", "Сленг"])
     
-    st.write("---")
     if st.button("Выйти"):
         st.session_state.logged_in = False
         st.rerun()
+    
+    st.write("---")
+    st.header("📊 История прогресса")
+    if not st.session_state.history:
+        st.write("Здесь будет ваш прогресс")
+    else:
+        for i, item in enumerate(reversed(st.session_state.history)):
+            with st.expander(f"Задание #{len(st.session_state.history) - i}"):
+                st.caption(f"RU: {item['ru']}")
+                st.caption(f"EN: {item['en']}")
+                if "ПРАВИЛЬНО" in item['status']:
+                    st.success("Верно")
+                else:
+                    st.error("Есть ошибки")
 
-# Проверка API ключа
+# ОСНОВНАЯ ЗОНА
 if not api_key:
-    st.warning("👈 Вставьте ваш API Key в боковом меню, чтобы начать обучение.")
+    st.warning("👈 Введите API Key в настройках слева.")
 else:
     client = Groq(api_key=api_key)
 
-    # Блок кнопок управления
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✨ Новое предложение"):
-            try:
-                prompt = f"Generate one random Russian sentence for translation. Level: {level}. Topic: {topic}. Output ONLY the sentence text, no quotes."
-                res = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.1-8b-instant"
-                )
-                st.session_state.current_phrase = res.choices[0].message.content
-            except Exception as e:
-                st.error(f"Ошибка связи: {e}")
+    if st.button("✨ Получить новое предложение"):
+        prompt = f"Generate one random Russian sentence for translation. Level: {level}. Topic: {topic}. ONLY text."
+        res = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-8b-instant"
+        )
+        st.session_state.current_phrase = res.choices[0].message.content
 
-    with col2:
-        if st.button("⏭ Пропустить"):
-            st.session_state.current_phrase = ""
-            st.rerun()
-
-    # Поле задания
     if st.session_state.current_phrase:
-        st.info(f"Переведи на английский:\n\n### {st.session_state.current_phrase}")
-        
-        user_translation = st.text_area("Ваш перевод:", placeholder="Введите английский текст здесь...")
+        st.info(f"Переведи: {st.session_state.current_phrase}")
+        user_translation = st.text_area("Ваш перевод:", placeholder="Введите текст...")
 
         if st.button("🔍 Проверить"):
             if user_translation:
-                with st.spinner('Учитель проверяет ваш английский...'):
-                    check_prompt = f"""
-                    Ты — опытный учитель английского (носитель языка). 
-                    Русское предложение: {st.session_state.current_phrase}
-                    Перевод ученика: {user_translation}
-                    
-                    Твоя задача:
-                    1. Проверь английский текст ученика на наличие ошибок (времена, артикли, порядок слов, лексика).
-                    2. Объясни каждую ошибку ПО-РУССКИ максимально подробно.
-                    3. Напиши 'Как скажет носитель' (самый естественный вариант).
-                    4. Предложи более продвинутые конструкции для улучшения предложения.
-                    """
-                    
-                    try:
-                        res = client.chat.completions.create(
-                            messages=[{"role": "user", "content": check_prompt}],
-                            model="llama-3.1-8b-instant"
-                        )
-                        feedback = res.choices[0].message.content
-                        
-                        # Сохраняем в историю
-                        st.session_state.history.append({
-                            "ru": st.session_state.current_phrase,
-                            "en": user_translation,
-                            "feedback": feedback
-                        })
-                        
-                        st.markdown("---")
-                        st.subheader("Разбор учителя:")
-                        st.write(feedback)
-                    except Exception as e:
-                        st.error(f"Ошибка проверки: {e}")
+                # Жесткий промпт для ИИ
+                check_prompt = f"""
+                Act as a strict English teacher. 
+                Source Russian: {st.session_state.current_phrase}
+                User English: {user_translation}
+                
+                Provide feedback in Russian. Strictly follow this format, no intros or outros:
+                
+                VERDICT: [Write only 'ПРАВИЛЬНО' if no major errors, otherwise 'НЕПРАВИЛЬНО']
+                
+                БЛОК 1 (Ошибки):
+                - [Bullet points of errors and rules in Russian]
+                
+                БЛОК 2 (Время):
+                - [Check if tense is correct, mention which tense it is. Highlight if correct/incorrect]
+                
+                БЛОК 3 (Как скажет носитель):
+                [Natural version]
+                
+                БЛОК 4 (Альтернативы):
+                [Advanced options]
+                """
+                
+                res = client.chat.completions.create(
+                    messages=[{"role": "user", "content": check_prompt}],
+                    model="llama-3.1-8b-instant"
+                )
+                feedback = res.choices[0].message.content
+                
+                # Определяем цвет (зеленый/красный)
+                is_correct = "VERDICT: ПРАВИЛЬНО" in feedback
+                status_label = "✅ ПРАВИЛЬНО" if is_correct else "❌ НЕПРАВИЛЬНО"
+                
+                # Сохраняем
+                st.session_state.history.append({
+                    "ru": st.session_state.current_phrase,
+                    "en": user_translation,
+                    "status": status_label
+                })
+                
+                # Вывод результата
+                if is_correct:
+                    st.success(status_label)
+                else:
+                    st.error(status_label)
+                
+                # Убираем техническую строку VERDICT из вывода пользователю
+                display_feedback = feedback.replace("VERDICT: ПРАВИЛЬНО", "").replace("VERDICT: НЕПРАВИЛЬНО", "").strip()
+                st.markdown(display_feedback)
             else:
-                st.warning("Поле перевода пустое!")
-
-    # --- ИСТОРИЯ (ПРОГРЕСС) ---
-    if st.session_state.history:
-        st.write("---")
-        st.subheader("📚 Мой прогресс")
-        for i, item in enumerate(reversed(st.session_state.history)):
-            with st.expander(f"Задание №{len(st.session_state.history) - i}"):
-                st.write(f"RU: {item['ru']}")
-                st.write(f"Ваш вариант: {item['en']}")
-                st.write(f"Разбор:\n{item['feedback']}")
+                st.warning("Введите перевод!")
