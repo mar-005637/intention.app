@@ -4,15 +4,7 @@ from groq import Groq
 # Page Configuration
 st.set_page_config(page_title="Intention", page_icon="🎯", layout="wide")
 
-# Custom CSS for UI
-st.markdown("""
-    <style>
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
-    .stExpander { border: none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# Session State Initialization
+# Session State
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'history' not in st.session_state:
@@ -20,23 +12,22 @@ if 'history' not in st.session_state:
 if 'current_phrase' not in st.session_state:
     st.session_state.current_phrase = ""
 
-# --- LOGIN SCREEN ---
+# --- LOGIN ---
 if not st.session_state.logged_in:
     st.title("🎯 Intention")
-    user_id = st.text_input("Login (strictly 8 characters):", max_chars=8)
+    user_id = st.text_input("Login (8 characters):", max_chars=8)
     if st.button("Enter"):
         if len(user_id) == 8:
             st.session_state.username = user_id
             st.session_state.logged_in = True
             st.rerun()
         else:
-            st.error("Login must be exactly 8 characters long.")
+            st.error("Login must be exactly 8 characters.")
     st.stop()
 
-# --- MAIN INTERFACE ---
-st.title(f"🎯 Intention | User: {st.session_state.username}")
+# --- INTERFACE ---
+st.title(f"🎯 Intention | {st.session_state.username}")
 
-# SIDEBAR: Settings + Progress History
 with st.sidebar:
     st.header("⚙️ Settings")
     api_key = st.text_input("Groq API Key:", type="password")
@@ -48,94 +39,83 @@ with st.sidebar:
         st.rerun()
     
     st.write("---")
-    st.header("📊 Progress History")
-    if not st.session_state.history:
-        st.write("No progress yet.")
-    else:
-        for i, item in enumerate(reversed(st.session_state.history)):
-            with st.expander(f"Task #{len(st.session_state.history) - i}"):
-                st.caption(f"RU: {item['ru']}")
-                st.caption(f"Your EN: {item['en']}")
-                if "CORRECT" in item['status']:
-                    st.success("Correct")
-                else:
-                    st.error("Errors found")
+    st.header("📊 Progress")
+    for i, item in enumerate(reversed(st.session_state.history)):
+        status_color = "✅" if "CORRECT" in item['status'] else "❌"
+        with st.expander(f"{status_color} Task #{len(st.session_state.history) - i}"):
+            st.caption(f"RU: {item['ru']}")
+            st.caption(f"EN: {item['en']}")
 
-# MAIN CONTENT AREA
+# MAIN CONTENT
 if not api_key:
-    st.warning("👈 Please enter your API Key in the settings on the left.")
+    st.warning("👈 Enter API Key in settings.")
 else:
     client = Groq(api_key=api_key)
 
     if st.button("✨ Get New Sentence"):
-        prompt = f"Generate one random Russian sentence for translation to English. Level: {level}. Topic: {topic}. Output ONLY the sentence text."
-        try:
-            res = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant"
-            )
-            st.session_state.current_phrase = res.choices[0].message.content
-        except Exception as e:
-            st.error(f"Connection error: {e}")
+        prompt = f"Generate 1 random Russian sentence for translation. Level: {level}. Topic: {topic}. Output ONLY the text."
+        res = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-8b-instant"
+        )
+        st.session_state.current_phrase = res.choices[0].message.content
 
     if st.session_state.current_phrase:
-        st.info(f"Translate to English:\n\n {st.session_state.current_phrase}")
-        user_translation = st.text_area("Your translation:", placeholder="Type your English version here...")
+        st.info(f"Translate: {st.session_state.current_phrase}")
+        user_translation = st.text_area("Your translation:")
 
         if st.button("🔍 Check"):
             if user_translation:
-                # Optimized prompt for the AI Teacher
+                # Ultra-strict prompt
                 check_prompt = f"""
-                Act as a strict English teacher. 
-                Original Russian: {st.session_state.current_phrase}
-                User English Translation: {user_translation}
-                
-                Analyze ONLY the English translation provided by the user. 
-                Explain everything in Russian. 
-                Strictly follow this structure (no greeting, no intro, no outro):
-                
-                VERDICT: [Write only 'CORRECT' if no errors, otherwise 'INCORRECT']
-                
+                You are a strict English corrector. Analyze the translation.
+                Source RU: {st.session_state.current_phrase}
+                User EN: {user_translation}
+                Level: {level}
+
+                Rules:
+                1. If the user's translation is grammatically correct and keeps the meaning, VERDICT must be CORRECT.
+                2. Explain errors ONLY in the user's English text.
+                3. Language of explanations: Russian.
+                4. NO intro, NO outro, NO "here is the analysis".
+
+                Format:
+                VERDICT: [CORRECT or INCORRECT]
+
                 BLOCK 1 (Errors):
-                - [List errors in the user's English sentence. Explain grammar/vocab rules in Russian]
-                
+                Ошибка: [error] - Почему: [why] - Исправлено: [fix]
+                (If no errors, write "Ошибок нет")
+
                 BLOCK 2 (Tense):
-                - [Identify the tense used in the English sentence. State if it is correct or incorrect for this context]
-                
-                BLOCK 3 (Native Speaker Version):
-                [Provide the most natural English version]
-                
+                Время [tense name] употреблено [верно/неверно].
+
+                BLOCK 3 (Native Version):
+                [One sentence only, matching {level}]
+
                 BLOCK 4 (Alternatives):
-                [Just list alternative English constructions here, no extra text]
+                - [Alternative 1]
+                - [Alternative 2]
                 """
                 
-                try:
-                    res = client.chat.completions.create(
-                        messages=[{"role": "user", "content": check_prompt}],
-                        model="llama-3.1-8b-instant"
-                    )
-                    feedback = res.choices[0].message.content
-                    
-                    is_correct = "VERDICT: CORRECT" in feedback
-                    status_label = "✅ CORRECT" if is_correct else "❌ INCORRECT"
-                    
-                    # Store in history
-                    st.session_state.history.append({
-                        "ru": st.session_state.current_phrase,
-                        "en": user_translation,
-                        "status": status_label
-                    })
-                    
-                    # Display Result
-                    if is_correct:
-                        st.success(status_label)
-                    else:
-                        st.error(status_label)
-                    
-                    # Clean feedback and display
-                    display_feedback = feedback.replace("VERDICT: CORRECT", "").replace("VERDICT: INCORRECT", "").strip()
-                    st.markdown(display_feedback)
-                except Exception as e:
-                    st.error(f"Error checking translation: {e}")
-            else:
-                st.warning("Please enter your translation first!")
+                res = client.chat.completions.create(
+                    messages=[{"role": "user", "content": check_prompt}],
+                    model="llama-3.1-8b-instant"
+                )
+                feedback = res.choices[0].message.content
+                
+                is_correct = "VERDICT: CORRECT" in feedback
+                status_label = "✅ CORRECT" if is_correct else "❌ INCORRECT"
+                
+                st.session_state.history.append({
+                    "ru": st.session_state.current_phrase,
+                    "en": user_translation,
+                    "status": status_label
+                })
+                
+                if is_correct:
+                    st.success(status_label)
+                else:
+                    st.error(status_label)
+                
+                display_feedback = feedback.replace("VERDICT: CORRECT", "").replace("VERDICT: INCORRECT", "").strip()
+                st.markdown(display_feedback)
